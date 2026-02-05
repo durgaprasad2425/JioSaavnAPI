@@ -21,9 +21,9 @@ app.add_middleware(
 )
 
 
-@app.get('/')
-def home():
-    return RedirectResponse(url="https://cyberboysumanjay.github.io/JioSaavnAPI/")
+# @app.get('/')
+# def home():
+#     return RedirectResponse(url="https://cyberboysumanjay.github.io/JioSaavnAPI/")
 
 
 @app.get('/song/')
