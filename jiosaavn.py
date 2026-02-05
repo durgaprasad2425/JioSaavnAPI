@@ -4,6 +4,11 @@ import helper
 import json
 from traceback import print_exc
 import re
+import logging
+from concurrent.futures import ThreadPoolExecutor
+
+# Reuse a single requests session to improve performance
+session = requests.Session()
 
 
 def search_for_song(query, lyrics, songdata):
@@ -12,16 +17,20 @@ def search_for_song(query, lyrics, songdata):
         return get_song(id, lyrics)
 
     search_base_url = endpoints.search_base_url+query
-    response = requests.get(search_base_url).text.encode().decode('unicode-escape')
+    response = session.get(search_base_url).text.encode().decode('unicode-escape')
     pattern = r'\(From "([^"]+)"\)'
     response = json.loads(re.sub(pattern, r"(From '\1')", response))
     song_response = response['songs']['data']
     if not songdata:
         return song_response
+
+    # Fetch song details in parallel to reduce latency
+    ids = [song['id'] for song in song_response]
     songs = []
-    for song in song_response:
-        id = song['id']
-        song_data = get_song(id, lyrics)
+    max_workers = min(10, len(ids) or 1)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(lambda sid: get_song(sid, lyrics), ids)
+    for song_data in results:
         if song_data:
             songs.append(song_data)
     return songs
@@ -30,18 +39,18 @@ def search_for_song(query, lyrics, songdata):
 def get_song(id, lyrics):
     try:
         song_details_base_url = endpoints.song_details_base_url+id
-        song_response = requests.get(
-            song_details_base_url).text.encode().decode('unicode-escape')
+        song_response = session.get(song_details_base_url).text.encode().decode('unicode-escape')
         song_response = json.loads(song_response)
         song_data = helper.format_song(song_response[id], lyrics)
         if song_data:
             return song_data
     except:
+        logging.exception("Failed to fetch song %s", id)
         return None
 
 
 def get_song_id(url):
-    res = requests.get(url, data=[('bitrate', '320')])
+    res = session.get(url, data=[('bitrate', '320')])
     try:
         return(res.text.split('"pid":"'))[1].split('","')[0]
     except IndexError:
@@ -51,13 +60,13 @@ def get_song_id(url):
 def get_album(album_id, lyrics):
     songs_json = []
     try:
-        response = requests.get(endpoints.album_details_base_url+album_id)
+        response = session.get(endpoints.album_details_base_url+album_id)
         if response.status_code == 200:
             songs_json = response.text.encode().decode('unicode-escape')
             songs_json = json.loads(songs_json)
             return helper.format_album(songs_json, lyrics)
     except Exception as e:
-        print(e)
+        logging.exception("Failed to fetch album %s", album_id)
         return None
 
 
@@ -71,19 +80,19 @@ def get_album_id(input_url):
 
 def get_playlist(listId, lyrics):
     try:
-        response = requests.get(endpoints.playlist_details_base_url+listId)
+        response = session.get(endpoints.playlist_details_base_url+listId)
         if response.status_code == 200:
             songs_json = response.text.encode().decode('unicode-escape')
             songs_json = json.loads(songs_json)
             return helper.format_playlist(songs_json, lyrics)
         return None
     except Exception:
-        print_exc()
+        logging.exception("Failed to fetch playlist %s", listId)
         return None
 
 
 def get_playlist_id(input_url):
-    res = requests.get(input_url).text
+    res = session.get(input_url).text
     try:
         return res.split('"type":"playlist","id":"')[1].split('"')[0]
     except IndexError:
@@ -92,6 +101,6 @@ def get_playlist_id(input_url):
 
 def get_lyrics(id):
     url = endpoints.lyrics_base_url+id
-    lyrics_json = requests.get(url).text
+    lyrics_json = session.get(url).text
     lyrics_text = json.loads(lyrics_json)
     return lyrics_text['lyrics']

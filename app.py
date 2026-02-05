@@ -1,173 +1,208 @@
-from flask import Flask, request, redirect, jsonify, json
-import time
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 import jiosaavn
 import os
 from traceback import print_exc
-from flask_cors import CORS
+import logging
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET", 'thankyoutonystark#weloveyou3000')
-CORS(app)
+# Configure logging: default to WARNING to suppress fetch logs
+logging.basicConfig(level=logging.WARNING)
+
+app = FastAPI()
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-@app.route('/')
+@app.get('/')
 def home():
-    return redirect("https://cyberboysumanjay.github.io/JioSaavnAPI/")
+    return RedirectResponse(url="https://cyberboysumanjay.github.io/JioSaavnAPI/")
 
 
-@app.route('/song/')
-def search():
-    lyrics = False
-    songdata = True
-    query = request.args.get('query')
-    lyrics_ = request.args.get('lyrics')
-    songdata_ = request.args.get('songdata')
-    if lyrics_ and lyrics_.lower() != 'false':
-        lyrics = True
-    if songdata_ and songdata_.lower() != 'true':
-        songdata = False
+@app.get('/song/')
+async def search(
+    query: str = Query(None),
+    lyrics: str = Query(None),
+    songdata: str = Query(None),
+    limit: int = Query(None)
+):
+    lyrics_flag = False
+    songdata_flag = True
+    
+    if lyrics and lyrics.lower() != 'false':
+        lyrics_flag = True
+    if songdata and songdata.lower() != 'true':
+        songdata_flag = False
+    
     if query:
-        return jsonify(jiosaavn.search_for_song(query, lyrics, songdata))
+        songs = jiosaavn.search_for_song(query, lyrics_flag, songdata_flag)
+        if limit and isinstance(songs, list):
+            songs = songs[:limit]
+        return songs
     else:
-        error = {
+        return {
             "status": False,
             "error": 'Query is required to search songs!'
         }
-        return jsonify(error)
 
 
-@app.route('/song/get/')
-def get_song():
-    lyrics = False
-    id = request.args.get('id')
-    lyrics_ = request.args.get('lyrics')
-    if lyrics_ and lyrics_.lower() != 'false':
-        lyrics = True
+@app.get('/song/get/')
+async def get_song(
+    id: str = Query(None),
+    lyrics: str = Query(None)
+):
+    lyrics_flag = False
+    
+    if lyrics and lyrics.lower() != 'false':
+        lyrics_flag = True
+    
     if id:
-        resp = jiosaavn.get_song(id, lyrics)
+        resp = jiosaavn.get_song(id, lyrics_flag)
         if not resp:
-            error = {
+            return {
                 "status": False,
                 "error": 'Invalid Song ID received!'
             }
-            return jsonify(error)
         else:
-            return jsonify(resp)
+            return resp
     else:
-        error = {
+        return {
             "status": False,
             "error": 'Song ID is required to get a song!'
         }
-        return jsonify(error)
 
 
-@app.route('/playlist/')
-def playlist():
-    lyrics = False
-    query = request.args.get('query')
-    lyrics_ = request.args.get('lyrics')
-    if lyrics_ and lyrics_.lower() != 'false':
-        lyrics = True
+@app.get('/playlist/')
+async def playlist(
+    query: str = Query(None),
+    lyrics: str = Query(None),
+    limit: int = Query(None)
+):
+    lyrics_flag = False
+    
+    if lyrics and lyrics.lower() != 'false':
+        lyrics_flag = True
+    
     if query:
         id = jiosaavn.get_playlist_id(query)
-        songs = jiosaavn.get_playlist(id, lyrics)
-        return jsonify(songs)
+        songs = jiosaavn.get_playlist(id, lyrics_flag)
+        if limit and isinstance(songs, dict) and 'songs' in songs:
+            songs['songs'] = songs['songs'][:limit]
+        elif limit and isinstance(songs, list):
+            songs = songs[:limit]
+        return songs
     else:
-        error = {
+        return {
             "status": False,
             "error": 'Query is required to search playlists!'
         }
-        return jsonify(error)
 
 
-@app.route('/album/')
-def album():
-    lyrics = False
-    query = request.args.get('query')
-    lyrics_ = request.args.get('lyrics')
-    if lyrics_ and lyrics_.lower() != 'false':
-        lyrics = True
+@app.get('/album/')
+async def album(
+    query: str = Query(None),
+    lyrics: str = Query(None),
+    limit: int = Query(None)
+):
+    lyrics_flag = False
+    
+    if lyrics and lyrics.lower() != 'false':
+        lyrics_flag = True
+    
     if query:
         id = jiosaavn.get_album_id(query)
-        songs = jiosaavn.get_album(id, lyrics)
-        return jsonify(songs)
+        songs = jiosaavn.get_album(id, lyrics_flag)
+        if limit and isinstance(songs, dict) and 'songs' in songs:
+            songs['songs'] = songs['songs'][:limit]
+        elif limit and isinstance(songs, list):
+            songs = songs[:limit]
+        return songs
     else:
-        error = {
+        return {
             "status": False,
             "error": 'Query is required to search albums!'
         }
-        return jsonify(error)
 
 
-@app.route('/lyrics/')
-def lyrics():
-    query = request.args.get('query')
-
+@app.get('/lyrics/')
+async def get_lyrics(query: str = Query(None)):
     if query:
         try:
             if 'http' in query and 'saavn' in query:
                 id = jiosaavn.get_song_id(query)
-                lyrics = jiosaavn.get_lyrics(id)
+                lyrics_result = jiosaavn.get_lyrics(id)
             else:
-                lyrics = jiosaavn.get_lyrics(query)
-            response = {}
-            response['status'] = True
-            response['lyrics'] = lyrics
-            return jsonify(response)
+                lyrics_result = jiosaavn.get_lyrics(query)
+            response = {
+                "status": True,
+                "lyrics": lyrics_result
+            }
+            return response
         except Exception as e:
-            error = {
+            return {
                 "status": False,
                 "error": str(e)
             }
-            return jsonify(error)
-
     else:
-        error = {
+        return {
             "status": False,
             "error": 'Query containing song link or id is required to fetch lyrics!'
         }
-        return jsonify(error)
 
 
-@app.route('/result/')
-def result():
-    lyrics = False
-    query = request.args.get('query')
-    lyrics_ = request.args.get('lyrics')
-    if lyrics_ and lyrics_.lower() != 'false':
-        lyrics = True
+@app.get('/result/')
+async def result(
+    query: str = Query(None),
+    lyrics: str = Query(None),
+    # limit: int = Query(None)
+):
+    lyrics_flag = False
+    
+    if lyrics and lyrics.lower() != 'false':
+        lyrics_flag = True
 
     if 'saavn' not in query:
-        return jsonify(jiosaavn.search_for_song(query, lyrics, True))
+        songs = jiosaavn.search_for_song(query, lyrics_flag, True)
+        # if limit and isinstance(songs, list):
+        #     songs = songs[:limit]
+        return songs
+    
     try:
         if '/song/' in query:
-            print("Song")
+            # debug log kept for diagnostics
+            logging.debug("Result: Song link detected")
             song_id = jiosaavn.get_song_id(query)
-            song = jiosaavn.get_song(song_id, lyrics)
-            return jsonify(song)
+            song = jiosaavn.get_song(song_id, lyrics_flag)
+            return song
 
         elif '/album/' in query:
-            print("Album")
+            logging.debug("Result: Album link detected")
             id = jiosaavn.get_album_id(query)
-            songs = jiosaavn.get_album(id, lyrics)
-            return jsonify(songs)
+            songs = jiosaavn.get_album(id, lyrics_flag)
+            return songs
 
-        elif '/playlist/' or '/featured/' in query:
-            print("Playlist")
+        elif '/playlist/' in query or '/featured/' in query:
+            logging.debug("Result: Playlist link detected")
             id = jiosaavn.get_playlist_id(query)
-            songs = jiosaavn.get_playlist(id, lyrics)
-            return jsonify(songs)
+            songs = jiosaavn.get_playlist(id, lyrics_flag)
+            return songs
 
     except Exception as e:
-        print_exc()
-        error = {
+        logging.exception("Error processing result query")
+        return {
             "status": True,
             "error": str(e)
         }
-        return jsonify(error)
     return None
 
 
 if __name__ == '__main__':
-    app.debug = True
-    app.run(host='0.0.0.0', port=5100, use_reloader=True, threaded=True)
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=5100, reload=True)

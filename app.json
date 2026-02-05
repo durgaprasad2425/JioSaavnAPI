@@ -3,7 +3,7 @@
     "description": "Unofficial API of JioSaavn.",
     "author": "Sumanjay",
     "keywords": [
-        "flask",
+        "fastapi",
         "python",
         "saavn",
         "jiosaavn",

@@ -1,5 +1,6 @@
-Flask
-gunicorn
+FastAPI
+uvicorn[standard]
 requests
+aiohttp
 pyDes
 flask-cors
